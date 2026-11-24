@@ -43,14 +43,15 @@
   .dock-btn.danger { border-color:var(--danger); color:var(--danger); background:rgba(255,59,48,.16); }
   .hidden { display:none !important; }
   .modal-backdrop { position:fixed; inset:0; z-index:30; background:rgba(2,6,14,.86); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; padding:16px; }
-  .modal-card { width:100%; max-width:400px; background:rgba(6,16,30,.97); border:1px solid var(--accent); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:11px; }
+  .modal-card { width:100%; max-width:400px; max-height:92vh; overflow-y:auto; background:rgba(6,16,30,.97); border:1px solid var(--accent); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:10px; }
   .modal-title { font-size:13px; letter-spacing:2px; color:var(--accent); border-bottom:1px solid rgba(var(--accent-rgb),.25); padding-bottom:8px; display:flex; justify-content:space-between; align-items:center; }
   .field-label { font-size:10px; letter-spacing:1.2px; color:var(--muted); margin-bottom:4px; display:block; }
   .field-input { width:100%; padding:10px; border-radius:8px; border:1px solid rgba(var(--accent-rgb),.4); background:#020810; color:var(--text); font-family:inherit; font-size:12px; outline:none; }
+  .row-inline { display:flex; gap:6px; align-items:center; margin-top:6px; }
   .toggle-row { display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border:1px solid rgba(var(--accent-rgb),.25); border-radius:8px; font-size:11px; }
   .hud-btn-full { width:100%; padding:10px; border-radius:8px; border:1px solid var(--accent); background:rgba(var(--accent-rgb),.18); color:var(--accent); font-family:inherit; font-size:11px; font-weight:700; letter-spacing:1.3px; cursor:pointer; }
   .hud-btn-secondary { border-color:rgba(255,179,0,.6); color:var(--secondary); background:rgba(255,179,0,.12); }
-  .toast { position:fixed; top:66px; left:50%; transform:translateX(-50%); z-index:40; padding:7px 14px; border-radius:8px; border:1px solid var(--accent); background:rgba(3,12,24,.95); color:var(--accent); font-size:11px; opacity:0; pointer-events:none; transition:opacity .25s; }
+  .toast { position:fixed; top:66px; left:50%; transform:translateX(-50%); z-index:40; padding:7px 14px; border-radius:8px; border:1px solid var(--accent); background:rgba(3,12,24,.95); color:var(--accent); font-size:11px; opacity:0; pointer-events:none; transition:opacity .25s; text-align:center; max-width:90%; }
   .toast.show { opacity:1; }
 </style>
 </head>
@@ -102,15 +103,18 @@
       <button class="icon-btn" id="closeSettingsBtn" style="width:26px;height:26px;font-size:12px;">✕</button>
     </div>
     <div>
-      <label class="field-label" for="apiKeyInput">GEMINI API KEY (Google AI Studio)</label>
+      <label class="field-label" for="apiKeyInput">GEMINI API KEY (inizia con AIza...)</label>
       <input type="password" id="apiKeyInput" class="field-input" placeholder="Incolla qui la tua AIza...">
     </div>
     <div>
-      <label class="field-label" for="modelSelect">MODELLO GEMINI</label>
-      <select id="modelSelect" class="field-input">
-        <option value="gemini-3.8-flash">gemini-3.8-flash (Consigliato + Search)</option>
-        <option value="gemini-2.0-flash">gemini-2.0-flash</option>
-      </select>
+      <label class="field-label" for="modelInput">MODELLO GEMINI (modificabile o auto-fallback)</label>
+      <input type="text" id="modelInput" class="field-input" placeholder="es. gemini-3.8-flash">
+      <div class="row-inline">
+        <select id="modelSelect" class="field-input" style="flex:1;padding:8px;">
+          <option value="gemini-3.8-flash">gemini-3.8-flash</option>
+        </select>
+        <button type="button" class="dock-btn" id="loadModelsBtn" style="height:36px;padding:0 10px;font-size:10px;">AGGIORNA</button>
+      </div>
     </div>
     <div class="toggle-row"><span>RISPOSTA VOCALE (TTS)</span><input type="checkbox" id="voiceToggle" checked></div>
     <div class="toggle-row"><span>RICERCA WEB LIVE (SEARCH)</span><input type="checkbox" id="searchToggle" checked></div>
@@ -133,16 +137,16 @@
   const muteBtn = document.getElementById('muteBtn'), settingsBtn = document.getElementById('settingsBtn');
   const settingsModal = document.getElementById('settingsModal'), closeSettingsBtn = document.getElementById('closeSettingsBtn');
   const saveSettingsBtn = document.getElementById('saveSettingsBtn'), apiKeyInput = document.getElementById('apiKeyInput');
-  const modelSelect = document.getElementById('modelSelect'), voiceToggle = document.getElementById('voiceToggle');
-  const searchToggle = document.getElementById('searchToggle'), wakeToggle = document.getElementById('wakeToggle');
+  const modelInput = document.getElementById('modelInput'), modelSelect = document.getElementById('modelSelect'), loadModelsBtn = document.getElementById('loadModelsBtn');
+  const voiceToggle = document.getElementById('voiceToggle'), searchToggle = document.getElementById('searchToggle'), wakeToggle = document.getElementById('wakeToggle');
   const assistantBtn = document.getElementById('assistantBtn'), batPill = document.getElementById('batPill');
   const netPill = document.getElementById('netPill'), clockSub = document.getElementById('clockSub'), hudToast = document.getElementById('hudToast');
 
   let currentMode = 'STANDBY', sfxMuted = false, isListening = false, isSpeaking = false;
-  let audioLevel = 0.08, targetAudioLevel = 0.08, arStream = null, conversation = [], webRecognition = null;
+  let audioLevel = 0.08, targetAudioLevel = 0.08, arStream = null, conversation = [], webRecognition = null, cachedModels = null;
   const config = {
     apiKey: localStorage.getItem('jarvis_api_key') || '',
-    model: 'gemini-3.8-flash',
+    model: localStorage.getItem('jarvis_model') || 'gemini-3.8-flash',
     voiceEnabled: localStorage.getItem('jarvis_voice') !== 'false',
     searchEnabled: localStorage.getItem('jarvis_search') !== 'false'
   };
@@ -176,7 +180,7 @@
 
   function showToast(msg) {
     hudToast.textContent = msg; hudToast.classList.add('show');
-    clearTimeout(showToast._t); showToast._t = setTimeout(() => hudToast.classList.remove('show'), 2200);
+    clearTimeout(showToast._t); showToast._t = setTimeout(() => hudToast.classList.remove('show'), 2600);
   }
   function setMode(mode) {
     const pal = PALETTES[mode] || PALETTES['STANDBY'];
@@ -260,10 +264,10 @@
     if (cmd === 'stealth' || cmd.includes('notturno')) { setMode('STEALTH'); return 'Modalità stealth attiva. Consumo energetico ridotto.'; }
     if (cmd === 'cancella log' || cmd === 'pulisci') { terminal.innerHTML = ''; conversation = []; return 'Archivio conversazioni ripulito, signore.'; }
     if (cmd.includes('visore') || cmd === 'ar') { toggleAR(); return document.body.classList.contains('ar-active') ? 'Visore tattico AR online.' : 'Visore tattico disattivato.'; }
-    if (cmd.includes('che ore sono') || cmd === 'ora') return `Sono le ${new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}, signore.`;
+    if (cmd.includes('che ore sono') || cmd === 'ora' || cmd === 'ora?') return `Sono le ${new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}, signore.`;
     if (cmd.includes('stato sistema') || cmd.includes('diagnostica')) {
       const bat = isAndroid ? android.getBatteryLevel() + '%' : batPill.textContent.replace('PWR ', '');
-      const ai = config.apiKey ? 'Gemini API Connessa' : 'Modalità Locale (inserisci API Key)';
+      const ai = config.apiKey ? `Gemini (${config.model})` : 'Modalità Locale (inserisci API Key)';
       return `Diagnostica completa: batteria ${bat}, rete ${navigator.onLine ? 'Online' : 'Offline'}, modulo AI: ${ai}.`;
     }
     if (isAndroid) {
@@ -283,28 +287,96 @@
     return null;
   }
 
-  async function askGemini(prompt) {
-    if (!config.apiKey) return { text: 'Signore, inserisca la sua Gemini API Key nelle Impostazioni (ingranaggio in alto a destra) per attivare le ricerche live.', sources: [] };
-    setMode('RICERCA WEB');
-    conversation.push({ role: 'user', parts: [{ text: prompt }] });
-    if (conversation.length > 10) conversation = conversation.slice(-10);
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent?key=${encodeURIComponent(config.apiKey)}`;
+  async function fetchAvailableModels(key, force = false) {
+    const k = (key || config.apiKey || '').trim();
+    if (!k) return [];
+    if (cachedModels && !force) return cachedModels;
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(k)}`);
+      const d = await r.json();
+      if (!r.ok || !Array.isArray(d.models)) return [];
+      cachedModels = d.models
+        .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+        .map(m => m.name.replace(/^models\//, ''))
+        .filter(n => n.includes('gemini') && !/embedding|tts|image|audio|robotics|aqa|vision/i.test(n));
+      return cachedModels;
+    } catch (_) { return []; }
+  }
+
+  function rankModels(list) {
+    const score = n => (n.includes('lite') ? 40 : 0) + (n.includes('flash') ? 25 : 0) + (n.includes('latest') ? 10 : 0) - (n.includes('pro') ? 10 : 0) - (n.includes('exp') ? 5 : 0);
+    return [...list].sort((a, b) => score(b) - score(a));
+  }
+
+  async function callGeminiOnce(modelName, useSearch) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${encodeURIComponent(config.apiKey)}`;
     const body = {
       systemInstruction: { parts: [{ text: 'Sei J.A.R.V.I.S., assistente AI di Tony Stark. Rispondi in italiano con stile brillante, sintetico e colto da maggiordomo high-tech. Massimo 3-4 frasi naturali per la lettura vocale.' }] },
       contents: conversation
     };
-    if (config.searchEnabled) body.tools = [{ google_search: {} }];
+    if (useSearch) body.tools = [{ google_search: {} }];
+    const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) {
+      const err = new Error(data?.error?.message || `HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    const cand = data?.candidates?.[0];
+    const text = cand?.content?.parts?.map(p => p.text || '').join(' ').trim() || 'Nessun dato rilevato, signore.';
+    const sources = (cand?.groundingMetadata?.groundingChunks || []).filter(c => c.web && c.web.uri).map(c => ({ title: c.web.title, uri: c.web.uri }));
+    return { text, sources };
+  }
+
+  async function askGemini(prompt) {
+    if (!config.apiKey) return { text: 'Signore, inserisca la sua Gemini API Key (AIza...) nelle Impostazioni in alto a destra.', sources: [] };
+    setMode('RICERCA WEB');
+    conversation.push({ role: 'user', parts: [{ text: prompt }] });
+    if (conversation.length > 10) conversation = conversation.slice(-10);
+
+    const tryWithSearchFallback = async (m) => {
+      try {
+        return await callGeminiOnce(m, config.searchEnabled);
+      } catch (e) {
+        if (config.searchEnabled && (e.status === 400 || e.status === 429 || /search|grounding|tool|quota/i.test(e.message))) {
+          return await callGeminiOnce(m, false);
+        }
+        throw e;
+      }
+    };
+
     try {
-      const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
-      const cand = data?.candidates?.[0];
-      const text = cand?.content?.parts?.map(p => p.text || '').join(' ').trim() || 'Nessun dato rilevato, signore.';
-      conversation.push({ role: 'model', parts: [{ text }] });
-      const sources = (cand?.groundingMetadata?.groundingChunks || []).filter(c => c.web && c.web.uri).map(c => ({ title: c.web.title, uri: c.web.uri }));
+      let result = null, lastErr = null;
+      try {
+        result = await tryWithSearchFallback(config.model);
+      } catch (err1) {
+        lastErr = err1;
+        const retryable = err1.status === 503 || err1.status === 429 || err1.status === 404 || /high demand|overload|unavailable|quota|no longer available|not found/i.test(err1.message);
+        if (!retryable) throw err1;
+
+        showToast('MODELLO OCCUPATO: CERCO ALTERNATIVA...');
+        const avail = await fetchAvailableModels(config.apiKey, true);
+        const alts = rankModels(avail.filter(n => n !== config.model)).slice(0, 5);
+        for (const m of alts) {
+          try {
+            result = await tryWithSearchFallback(m);
+            config.model = m;
+            localStorage.setItem('jarvis_model', m);
+            showToast('PASSATO A ' + m);
+            break;
+          } catch (eAlt) { lastErr = eAlt; }
+        }
+        if (!result) {
+          await new Promise(r => setTimeout(r, 1200));
+          result = await tryWithSearchFallback(config.model);
+        }
+      }
+      if (!result) throw lastErr || new Error('Nessun modello disponibile');
+      conversation.push({ role: 'model', parts: [{ text: result.text }] });
       setMode('STANDBY');
-      return { text, sources };
+      return result;
     } catch (err) {
+      conversation.pop();
       setMode('ALLERTA'); setTimeout(() => setMode('STANDBY'), 1800);
       return { text: `Errore di connessione a Gemini: ${err.message}`, sources: [] };
     }
@@ -344,8 +416,35 @@
     if (isAndroid) batPill.textContent = `PWR ${android.getBatteryLevel()}%`;
   }, 150);
 
+  function populateSelect(list) {
+    modelSelect.innerHTML = '';
+    const items = list.length ? rankModels(list) : [config.model];
+    items.forEach(m => {
+      const opt = document.createElement('option'); opt.value = m; opt.textContent = m;
+      if (m === modelInput.value.trim()) opt.selected = true;
+      modelSelect.appendChild(opt);
+    });
+  }
+
+  loadModelsBtn.addEventListener('click', async () => {
+    const k = apiKeyInput.value.trim();
+    if (!k) { showToast('INSERISCI PRIMA LA API KEY'); return; }
+    loadModelsBtn.textContent = '...';
+    const list = await fetchAvailableModels(k, true);
+    loadModelsBtn.textContent = 'AGGIORNA';
+    if (list.length) {
+      populateSelect(list);
+      modelInput.value = modelSelect.value;
+      showToast(`${list.length} MODELLI TROVATI`);
+    } else {
+      showToast('CHIAVE NON VALIDA O RETE ASSENTE');
+    }
+  });
+  modelSelect.addEventListener('change', () => { modelInput.value = modelSelect.value; });
+
   settingsBtn.addEventListener('click', () => {
-    sfxTap(); apiKeyInput.value = config.apiKey; modelSelect.value = config.model;
+    sfxTap(); apiKeyInput.value = config.apiKey; modelInput.value = config.model;
+    populateSelect(cachedModels || [config.model]);
     voiceToggle.checked = config.voiceEnabled; searchToggle.checked = config.searchEnabled;
     if (isAndroid) { wakeToggle.checked = android.isWakeServiceRunning(); assistantBtn.classList.remove('hidden'); }
     else document.getElementById('wakeRow').classList.add('hidden');
@@ -353,8 +452,10 @@
   });
   closeSettingsBtn.addEventListener('click', () => settingsModal.classList.add('hidden'));
   saveSettingsBtn.addEventListener('click', () => {
-    config.apiKey = apiKeyInput.value.trim(); config.model = modelSelect.value;
+    config.apiKey = apiKeyInput.value.trim();
+    config.model = modelInput.value.trim() || 'gemini-3.8-flash';
     config.voiceEnabled = voiceToggle.checked; config.searchEnabled = searchToggle.checked;
+    cachedModels = null;
     localStorage.setItem('jarvis_api_key', config.apiKey); localStorage.setItem('jarvis_model', config.model);
     localStorage.setItem('jarvis_voice', String(config.voiceEnabled)); localStorage.setItem('jarvis_search', String(config.searchEnabled));
     if (isAndroid) android.setWakeServiceEnabled(wakeToggle.checked);
@@ -415,7 +516,7 @@
     requestAnimationFrame(renderCore);
   }
   renderCore();
-  addLog('JARVIS', 'Sistemi online, signore. Tocchi il reattore centrale per impartire un comando vocale, oppure inserisca la sua Gemini API Key nelle impostazioni.');
+  addLog('JARVIS', 'Sistemi online con cambio modello automatico, signore. Inserisca la sua API Key AIza nelle impostazioni e tocchi AGGIORNA per caricare i modelli liberi.');
 })();
 </script>
 </body>
