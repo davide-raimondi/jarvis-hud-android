@@ -108,7 +108,7 @@
     <div>
       <label class="field-label" for="modelSelect">MODELLO GEMINI</label>
       <select id="modelSelect" class="field-input">
-        <option value="gemini-2.5-flash">gemini-2.5-flash (Consigliato + Search)</option>
+        <option value="gemini-3.8-flash">gemini-3.8-flash (Consigliato + Search)</option>
         <option value="gemini-2.0-flash">gemini-2.0-flash</option>
       </select>
     </div>
@@ -142,7 +142,7 @@
   let audioLevel = 0.08, targetAudioLevel = 0.08, arStream = null, conversation = [], webRecognition = null;
   const config = {
     apiKey: localStorage.getItem('jarvis_api_key') || '',
-    model: localStorage.getItem('jarvis_model') || 'gemini-2.5-flash',
+    model: 'gemini-3.8-flash',
     voiceEnabled: localStorage.getItem('jarvis_voice') !== 'false',
     searchEnabled: localStorage.getItem('jarvis_search') !== 'false'
   };
