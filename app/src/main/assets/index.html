@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>J.A.R.V.I.S. // STARK HUD</title>
+<style>
+  :root { --bg:#030710; --accent:#00e5ff; --accent-rgb:0,229,255; --secondary:#ffb300; --danger:#ff3b30; --panel:rgba(6,16,30,0.74); --border:rgba(0,229,255,0.28); --text:#e6f9ff; --muted:#7eb8c9; }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; user-select:none; }
+  html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--text); font-family:'Roboto Mono',ui-monospace,monospace; }
+  #arVideo { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; pointer-events:none; transition:opacity .4s; z-index:0; }
+  body.ar-active #arVideo { opacity:.58; }
+  .hud-grid { position:fixed; inset:0; background-image:linear-gradient(rgba(var(--accent-rgb),.06) 1px,transparent 1px),linear-gradient(90deg,rgba(var(--accent-rgb),.06) 1px,transparent 1px); background-size:28px 28px; pointer-events:none; z-index:1; }
+  .hud-vignette { position:fixed; inset:0; background:radial-gradient(circle at 50% 42%,transparent 25%,rgba(2,6,14,.88) 95%); pointer-events:none; z-index:2; }
+  #arOverlay { position:fixed; inset:0; z-index:3; pointer-events:none; opacity:0; transition:opacity .3s; }
+  body.ar-active #arOverlay { opacity:1; pointer-events:auto; }
+  .ar-reticle { position:absolute; left:50%; top:42%; width:116px; height:116px; transform:translate(-50%,-50%); border:1.5px solid rgba(var(--accent-rgb),.85); border-radius:50%; box-shadow:0 0 18px rgba(var(--accent-rgb),.45); transition:left .2s,top .2s; }
+  .ar-tag { position:absolute; top:-24px; left:50%; transform:translateX(-50%); white-space:nowrap; font-size:10px; letter-spacing:1.4px; color:var(--accent); background:rgba(3,10,20,.85); padding:2px 8px; border:1px solid rgba(var(--accent-rgb),.5); }
+  .app-shell { position:relative; z-index:5; display:flex; flex-direction:column; height:100%; padding:env(safe-area-inset-top,10px) 12px env(safe-area-inset-bottom,12px); gap:8px; }
+  .top-bar { display:flex; justify-content:space-between; align-items:center; padding:8px 10px; background:var(--panel); border:1px solid var(--border); border-radius:10px; backdrop-filter:blur(8px); }
+  .brand-title { font-size:13px; font-weight:700; letter-spacing:3px; color:var(--accent); text-shadow:0 0 10px rgba(var(--accent-rgb),.6); }
+  .brand-sub { font-size:9px; letter-spacing:1.4px; color:var(--muted); margin-top:2px; }
+  .telemetry-pills { display:flex; align-items:center; gap:6px; font-size:10px; }
+  .pill { padding:3px 7px; border:1px solid rgba(var(--accent-rgb),.3); border-radius:6px; background:rgba(var(--accent-rgb),.08); white-space:nowrap; }
+  .icon-btn { width:32px; height:32px; border-radius:8px; border:1px solid rgba(var(--accent-rgb),.45); background:rgba(var(--accent-rgb),.1); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:14px; cursor:pointer; }
+  .icon-btn.active { background:rgba(var(--accent-rgb),.3); box-shadow:0 0 12px rgba(var(--accent-rgb),.5); }
+  .core-zone { position:relative; flex:0 0 auto; height:225px; display:flex; align-items:center; justify-content:center; }
+  #coreCanvas { width:220px; height:220px; cursor:pointer; }
+  .status-badge { position:absolute; bottom:2px; padding:3px 12px; border-radius:20px; font-size:10px; letter-spacing:2px; font-weight:700; color:var(--accent); background:rgba(3,10,20,.88); border:1px solid rgba(var(--accent-rgb),.55); }
+  .mode-strip { display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .mode-chip { font-family:inherit; font-size:10px; letter-spacing:1px; padding:5px 9px; border-radius:6px; border:1px solid rgba(var(--accent-rgb),.35); background:rgba(6,16,30,.78); color:var(--muted); cursor:pointer; }
+  .mode-chip.active { color:#030710; background:var(--accent); border-color:var(--accent); font-weight:700; }
+  .terminal { flex:1 1 auto; min-height:0; overflow-y:auto; padding:10px; background:var(--panel); border:1px solid var(--border); border-radius:10px; display:flex; flex-direction:column; gap:8px; }
+  .log-item { display:flex; flex-direction:column; gap:4px; padding:7px 9px; border-left:2px solid var(--accent); background:rgba(var(--accent-rgb),.06); border-radius:0 6px 6px 0; user-select:text; }
+  .log-item.user { border-left-color:var(--secondary); background:rgba(255,179,0,.08); }
+  .log-head { display:flex; justify-content:space-between; font-size:9px; letter-spacing:1.4px; color:var(--muted); }
+  .log-body { font-size:12.5px; line-height:1.45; white-space:pre-wrap; word-break:break-word; }
+  .sources-row { display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; }
+  .source-chip { font-size:10px; color:var(--secondary); text-decoration:none; padding:2px 7px; border:1px solid rgba(255,179,0,.45); border-radius:12px; background:rgba(255,179,0,.1); max-width:210px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .input-dock { display:flex; gap:6px; align-items:center; }
+  .cmd-input { flex:1; height:44px; padding:0 12px; border-radius:10px; border:1px solid rgba(var(--accent-rgb),.45); background:rgba(5,14,26,.92); color:var(--text); font-family:inherit; font-size:13px; outline:none; }
+  .dock-btn { height:44px; padding:0 13px; border-radius:10px; border:1px solid var(--accent); background:rgba(var(--accent-rgb),.16); color:var(--accent); font-family:inherit; font-size:12px; font-weight:700; letter-spacing:1px; cursor:pointer; }
+  .dock-btn.danger { border-color:var(--danger); color:var(--danger); background:rgba(255,59,48,.16); }
+  .hidden { display:none !important; }
+  .modal-backdrop { position:fixed; inset:0; z-index:30; background:rgba(2,6,14,.86); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; padding:16px; }
+  .modal-card { width:100%; max-width:400px; background:rgba(6,16,30,.97); border:1px solid var(--accent); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:11px; }
+  .modal-title { font-size:13px; letter-spacing:2px; color:var(--accent); border-bottom:1px solid rgba(var(--accent-rgb),.25); padding-bottom:8px; display:flex; justify-content:space-between; align-items:center; }
+  .field-label { font-size:10px; letter-spacing:1.2px; color:var(--muted); margin-bottom:4px; display:block; }
+  .field-input { width:100%; padding:10px; border-radius:8px; border:1px solid rgba(var(--accent-rgb),.4); background:#020810; color:var(--text); font-family:inherit; font-size:12px; outline:none; }
+  .toggle-row { display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border:1px solid rgba(var(--accent-rgb),.25); border-radius:8px; font-size:11px; }
+  .hud-btn-full { width:100%; padding:10px; border-radius:8px; border:1px solid var(--accent); background:rgba(var(--accent-rgb),.18); color:var(--accent); font-family:inherit; font-size:11px; font-weight:700; letter-spacing:1.3px; cursor:pointer; }
+  .hud-btn-secondary { border-color:rgba(255,179,0,.6); color:var(--secondary); background:rgba(255,179,0,.12); }
+  .toast { position:fixed; top:66px; left:50%; transform:translateX(-50%); z-index:40; padding:7px 14px; border-radius:8px; border:1px solid var(--accent); background:rgba(3,12,24,.95); color:var(--accent); font-size:11px; opacity:0; pointer-events:none; transition:opacity .25s; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<video id="arVideo" autoplay playsinline muted></video>
+<div class="hud-grid"></div>
+<div class="hud-vignette"></div>
+<div id="arOverlay"><div class="ar-reticle" id="arReticle"><div class="ar-tag" id="arTag">BERSAGLIO // LOCK</div></div></div>
+<div class="toast" id="hudToast">SISTEMA PRONTO</div>
+
+<div class="app-shell">
+  <header class="top-bar">
+    <div>
+      <div class="brand-title">J.A.R.V.I.S.</div>
+      <div class="brand-sub" id="clockSub">MARK VII // ONLINE</div>
+    </div>
+    <div class="telemetry-pills">
+      <span class="pill" id="batPill">PWR --%</span>
+      <span class="pill" id="netPill">NET OK</span>
+      <button class="icon-btn" id="arBtn">AR</button>
+      <button class="icon-btn" id="muteBtn">🔊</button>
+      <button class="icon-btn" id="settingsBtn">⚙</button>
+    </div>
+  </header>
+  <section class="core-zone">
+    <canvas id="coreCanvas" width="440" height="440"></canvas>
+    <div class="status-badge" id="statusBadge">STANDBY</div>
+  </section>
+  <div class="mode-strip">
+    <button class="mode-chip active" data-cmd="standby">STANDBY</button>
+    <button class="mode-chip" data-cmd="allerta">ALLERTA</button>
+    <button class="mode-chip" data-cmd="stealth">STEALTH</button>
+    <button class="mode-chip" data-cmd="stato sistema">DIAGNOSTICA</button>
+    <button class="mode-chip" data-cmd="cancella log">PULISCI</button>
+  </div>
+  <main class="terminal" id="terminal"></main>
+  <form class="input-dock" id="cmdForm">
+    <button type="button" class="dock-btn" id="micBtn">MIC</button>
+    <button type="button" class="dock-btn danger hidden" id="stopSpeakBtn">STOP</button>
+    <input type="text" class="cmd-input" id="cmdInput" placeholder="Parla o scrivi a J.A.R.V.I.S..." autocomplete="off">
+    <button type="submit" class="dock-btn">INVIA</button>
+  </form>
+</div>
+
+<div class="modal-backdrop hidden" id="settingsModal">
+  <div class="modal-card">
+    <div class="modal-title">
+      <span>CONFIGURAZIONE STARK OS</span>
+      <button class="icon-btn" id="closeSettingsBtn" style="width:26px;height:26px;font-size:12px;">✕</button>
+    </div>
+    <div>
+      <label class="field-label" for="apiKeyInput">GEMINI API KEY (Google AI Studio)</label>
+      <input type="password" id="apiKeyInput" class="field-input" placeholder="Incolla qui la tua AIza...">
+    </div>
+    <div>
+      <label class="field-label" for="modelSelect">MODELLO GEMINI</label>
+      <select id="modelSelect" class="field-input">
+        <option value="gemini-2.5-flash">gemini-2.5-flash (Consigliato + Search)</option>
+        <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+      </select>
+    </div>
+    <div class="toggle-row"><span>RISPOSTA VOCALE (TTS)</span><input type="checkbox" id="voiceToggle" checked></div>
+    <div class="toggle-row"><span>RICERCA WEB LIVE (SEARCH)</span><input type="checkbox" id="searchToggle" checked></div>
+    <div class="toggle-row" id="wakeRow"><span>ASCOLTO BACKGROUND ("JARVIS")</span><input type="checkbox" id="wakeToggle"></div>
+    <button type="button" class="hud-btn-full hud-btn-secondary hidden" id="assistantBtn">IMPOSTA COME ASSISTENTE ANDROID</button>
+    <button type="button" class="hud-btn-full" id="saveSettingsBtn">SALVA CONFIGURAZIONE</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const isAndroid = typeof window.JarvisAndroid !== 'undefined';
+  const android = isAndroid ? window.JarvisAndroid : null;
+  const canvas = document.getElementById('coreCanvas'), ctx = canvas.getContext('2d');
+  const statusBadge = document.getElementById('statusBadge'), terminal = document.getElementById('terminal');
+  const cmdForm = document.getElementById('cmdForm'), cmdInput = document.getElementById('cmdInput');
+  const micBtn = document.getElementById('micBtn'), stopSpeakBtn = document.getElementById('stopSpeakBtn');
+  const arBtn = document.getElementById('arBtn'), arVideo = document.getElementById('arVideo');
+  const arOverlay = document.getElementById('arOverlay'), arReticle = document.getElementById('arReticle'), arTag = document.getElementById('arTag');
+  const muteBtn = document.getElementById('muteBtn'), settingsBtn = document.getElementById('settingsBtn');
+  const settingsModal = document.getElementById('settingsModal'), closeSettingsBtn = document.getElementById('closeSettingsBtn');
+  const saveSettingsBtn = document.getElementById('saveSettingsBtn'), apiKeyInput = document.getElementById('apiKeyInput');
+  const modelSelect = document.getElementById('modelSelect'), voiceToggle = document.getElementById('voiceToggle');
+  const searchToggle = document.getElementById('searchToggle'), wakeToggle = document.getElementById('wakeToggle');
+  const assistantBtn = document.getElementById('assistantBtn'), batPill = document.getElementById('batPill');
+  const netPill = document.getElementById('netPill'), clockSub = document.getElementById('clockSub'), hudToast = document.getElementById('hudToast');
+
+  let currentMode = 'STANDBY', sfxMuted = false, isListening = false, isSpeaking = false;
+  let audioLevel = 0.08, targetAudioLevel = 0.08, arStream = null, conversation = [], webRecognition = null;
+  const config = {
+    apiKey: localStorage.getItem('jarvis_api_key') || '',
+    model: localStorage.getItem('jarvis_model') || 'gemini-2.5-flash',
+    voiceEnabled: localStorage.getItem('jarvis_voice') !== 'false',
+    searchEnabled: localStorage.getItem('jarvis_search') !== 'false'
+  };
+  const PALETTES = {
+    'STANDBY':     { hex: '#00e5ff', rgb: '0, 229, 255', speed: 1.0 },
+    'ASCOLTO':     { hex: '#00f5ff', rgb: '0, 245, 255', speed: 2.4 },
+    'RICERCA WEB': { hex: '#ffb300', rgb: '255, 179, 0', speed: 2.8 },
+    'ALLERTA':     { hex: '#ff3b30', rgb: '255, 59, 48', speed: 3.1 },
+    'STEALTH':     { hex: '#00ff88', rgb: '0, 255, 136', speed: 0.7 }
+  };
+
+  let audioCtx = null;
+  function playTone(freq, dur, type = 'sine', vol = 0.08, endFreq = null) {
+    if (sfxMuted) return;
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+      osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      if (endFreq) osc.frequency.exponentialRampToValueAtTime(endFreq, audioCtx.currentTime + dur);
+      gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + dur);
+    } catch (_) {}
+  }
+  const sfxBoot = () => { playTone(280, 0.18, 'sine', 0.06, 640); setTimeout(() => playTone(640, 0.22, 'triangle', 0.05, 980), 140); };
+  const sfxTap = () => playTone(880, 0.06, 'sine', 0.05, 1180);
+  const sfxListen = () => playTone(520, 0.14, 'sine', 0.07, 1040);
+  const sfxAlert = () => playTone(220, 0.25, 'sawtooth', 0.06, 160);
+
+  function showToast(msg) {
+    hudToast.textContent = msg; hudToast.classList.add('show');
+    clearTimeout(showToast._t); showToast._t = setTimeout(() => hudToast.classList.remove('show'), 2200);
+  }
+  function setMode(mode) {
+    const pal = PALETTES[mode] || PALETTES['STANDBY'];
+    currentMode = mode;
+    document.documentElement.style.setProperty('--accent', pal.hex);
+    document.documentElement.style.setProperty('--accent-rgb', pal.rgb);
+    statusBadge.textContent = mode;
+    document.querySelectorAll('.mode-chip').forEach(b => b.classList.toggle('active', b.dataset.cmd.toUpperCase() === mode));
+  }
+  function addLog(role, text, sources = []) {
+    const item = document.createElement('div');
+    item.className = 'log-item ' + (role === 'USER' ? 'user' : 'jarvis');
+    const now = new Date().toLocaleTimeString('it-IT', { hour12: false });
+    item.innerHTML = `<div class="log-head"><span>${role === 'USER' ? 'UTENTE // COMANDO' : 'J.A.R.V.I.S. // RISPOSTA'}</span><span>${now}</span></div><div class="log-body"></div>`;
+    item.querySelector('.log-body').textContent = text;
+    if (sources && sources.length > 0) {
+      const row = document.createElement('div'); row.className = 'sources-row';
+      sources.slice(0, 4).forEach(s => {
+        const a = document.createElement('a'); a.className = 'source-chip'; a.href = s.uri; a.target = '_blank';
+        a.textContent = '↗ ' + (s.title || s.uri);
+        if (isAndroid) a.addEventListener('click', ev => { ev.preventDefault(); android.openUrl(s.uri); });
+        row.appendChild(a);
+      });
+      item.appendChild(row);
+    }
+    terminal.appendChild(item); terminal.scrollTop = terminal.scrollHeight;
+  }
+  function speakText(text) {
+    if (!config.voiceEnabled || !text) return;
+    const clean = text.replace(/[*_`#]/g, '').replace(/\s+/g, ' ').trim();
+    if (isAndroid) { android.speak(clean); return; }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(clean);
+      u.lang = 'it-IT'; u.pitch = 0.92; u.rate = 1.05;
+      u.onstart = onSpeechStart; u.onend = onSpeechEnd; u.onerror = onSpeechEnd;
+      window.speechSynthesis.speak(u);
+    }
+  }
+  function stopSpeaking() {
+    if (isAndroid) android.stopSpeaking();
+    else if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    onSpeechEnd();
+  }
+  function onSpeechStart() { isSpeaking = true; stopSpeakBtn.classList.remove('hidden'); }
+  function onSpeechEnd() { isSpeaking = false; stopSpeakBtn.classList.add('hidden'); if (currentMode === 'RICERCA WEB') setMode('STANDBY'); }
+
+  function startListening() {
+    stopSpeaking(); sfxListen();
+    if (isAndroid) { isListening = true; setMode('ASCOLTO'); android.startListening(); return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { showToast('MICROFONO NON SUPPORTATO'); return; }
+    try {
+      if (webRecognition) webRecognition.abort();
+      webRecognition = new SR(); webRecognition.lang = 'it-IT'; webRecognition.interimResults = true;
+      webRecognition.onstart = () => { isListening = true; setMode('ASCOLTO'); };
+      webRecognition.onresult = ev => {
+        const res = ev.results[ev.results.length - 1];
+        cmdInput.value = res[0].transcript; targetAudioLevel = 0.75;
+        if (res.isFinal) { isListening = false; cmdInput.value = ''; handleCommand(res[0].transcript); }
+      };
+      webRecognition.onerror = () => { isListening = false; setMode('STANDBY'); };
+      webRecognition.onend = () => { isListening = false; if (currentMode === 'ASCOLTO') setMode('STANDBY'); };
+      webRecognition.start();
+    } catch (_) { setMode('STANDBY'); }
+  }
+
+  window.jarvisOnWake = () => { sfxBoot(); startListening(); };
+  window.jarvisOnListenReady = () => { isListening = true; setMode('ASCOLTO'); };
+  window.jarvisOnVoiceLevel = rms => { targetAudioLevel = Math.max(0.08, Math.min(1, (rms + 2) / 12)); };
+  window.jarvisOnVoicePartial = text => { cmdInput.value = text; };
+  window.jarvisOnVoiceResult = text => { isListening = false; cmdInput.value = ''; handleCommand(text); };
+  window.jarvisOnVoiceError = () => { isListening = false; if (currentMode === 'ASCOLTO') setMode('STANDBY'); };
+  window.jarvisOnSpeechStart = onSpeechStart;
+  window.jarvisOnSpeechEnd = onSpeechEnd;
+
+  function tryLocalCommand(raw) {
+    const cmd = raw.toLowerCase().trim();
+    if (cmd === 'standby' || cmd.includes('protocollo normale')) { setMode('STANDBY'); return 'Protocollo operativo standard ripristinato, signore.'; }
+    if (cmd === 'allerta' || cmd.includes('combattimento')) { setMode('ALLERTA'); sfxAlert(); return 'Protocollo di allerta attivato. Sistemi pronti, signore.'; }
+    if (cmd === 'stealth' || cmd.includes('notturno')) { setMode('STEALTH'); return 'Modalità stealth attiva. Consumo energetico ridotto.'; }
+    if (cmd === 'cancella log' || cmd === 'pulisci') { terminal.innerHTML = ''; conversation = []; return 'Archivio conversazioni ripulito, signore.'; }
+    if (cmd.includes('visore') || cmd === 'ar') { toggleAR(); return document.body.classList.contains('ar-active') ? 'Visore tattico AR online.' : 'Visore tattico disattivato.'; }
+    if (cmd.includes('che ore sono') || cmd === 'ora') return `Sono le ${new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}, signore.`;
+    if (cmd.includes('stato sistema') || cmd.includes('diagnostica')) {
+      const bat = isAndroid ? android.getBatteryLevel() + '%' : batPill.textContent.replace('PWR ', '');
+      const ai = config.apiKey ? 'Gemini API Connessa' : 'Modalità Locale (inserisci API Key)';
+      return `Diagnostica completa: batteria ${bat}, rete ${navigator.onLine ? 'Online' : 'Offline'}, modulo AI: ${ai}.`;
+    }
+    if (isAndroid) {
+      if (cmd.includes('accendi') && cmd.includes('torcia')) return android.setFlashlight(true) ? 'Torcia tattica attivata, signore.' : 'Impossibile accedere al LED.';
+      if (cmd.includes('spegni') && cmd.includes('torcia')) { android.setFlashlight(false); return 'Torcia disattivata.'; }
+      if (cmd.includes('batteria')) return `Livello energetico del dispositivo al ${android.getBatteryLevel()} percento, signore.`;
+      if (cmd.includes('attiva') && (cmd.includes('background') || cmd.includes('sempre attivo'))) { android.setWakeServiceEnabled(true); wakeToggle.checked = true; return 'Ascolto in background attivato.'; }
+      if (cmd.includes('disattiva') && (cmd.includes('background') || cmd.includes('sempre attivo'))) { android.setWakeServiceEnabled(false); wakeToggle.checked = false; return 'Ascolto in background disattivato.'; }
+      const openMatch = cmd.match(/^apri\s+(.+)/);
+      if (openMatch) return android.openApp(openMatch[1].trim()) ? `Avvio ${openMatch[1].trim()} in corso, signore.` : `Applicazione ${openMatch[1].trim()} non trovata.`;
+      const alarmMatch = cmd.match(/sveglia.*?(\d{1,2})(?:[:.\s](\d{2}))?/);
+      if (alarmMatch) {
+        const h = parseInt(alarmMatch[1], 10), m = alarmMatch[2] ? parseInt(alarmMatch[2], 10) : 0;
+        return android.setAlarm(h, m, 'Sveglia J.A.R.V.I.S.') ? `Sveglia impostata alle ${h}:${String(m).padStart(2, '0')}, signore.` : 'Errore creazione sveglia.';
+      }
+    }
+    return null;
+  }
+
+  async function askGemini(prompt) {
+    if (!config.apiKey) return { text: 'Signore, inserisca la sua Gemini API Key nelle Impostazioni (ingranaggio in alto a destra) per attivare le ricerche live.', sources: [] };
+    setMode('RICERCA WEB');
+    conversation.push({ role: 'user', parts: [{ text: prompt }] });
+    if (conversation.length > 10) conversation = conversation.slice(-10);
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent?key=${encodeURIComponent(config.apiKey)}`;
+    const body = {
+      systemInstruction: { parts: [{ text: 'Sei J.A.R.V.I.S., assistente AI di Tony Stark. Rispondi in italiano con stile brillante, sintetico e colto da maggiordomo high-tech. Massimo 3-4 frasi naturali per la lettura vocale.' }] },
+      contents: conversation
+    };
+    if (config.searchEnabled) body.tools = [{ google_search: {} }];
+    try {
+      const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`);
+      const cand = data?.candidates?.[0];
+      const text = cand?.content?.parts?.map(p => p.text || '').join(' ').trim() || 'Nessun dato rilevato, signore.';
+      conversation.push({ role: 'model', parts: [{ text }] });
+      const sources = (cand?.groundingMetadata?.groundingChunks || []).filter(c => c.web && c.web.uri).map(c => ({ title: c.web.title, uri: c.web.uri }));
+      setMode('STANDBY');
+      return { text, sources };
+    } catch (err) {
+      setMode('ALLERTA'); setTimeout(() => setMode('STANDBY'), 1800);
+      return { text: `Errore di connessione a Gemini: ${err.message}`, sources: [] };
+    }
+  }
+
+  async function handleCommand(rawText) {
+    const text = (rawText || '').trim();
+    if (!text) return;
+    addLog('USER', text); sfxTap();
+    const localReply = tryLocalCommand(text);
+    if (localReply) { addLog('JARVIS', localReply); speakText(localReply); return; }
+    const reply = await askGemini(text);
+    addLog('JARVIS', reply.text, reply.sources); speakText(reply.text);
+  }
+
+  async function toggleAR() {
+    if (document.body.classList.contains('ar-active')) {
+      document.body.classList.remove('ar-active'); arBtn.classList.remove('active');
+      if (arStream) { arStream.getTracks().forEach(t => t.stop()); arStream = null; }
+      arVideo.srcObject = null; return;
+    }
+    document.body.classList.add('ar-active'); arBtn.classList.add('active');
+    try {
+      arStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      arVideo.srcObject = arStream;
+    } catch (_) { showToast('MODALITÀ RADAR SIMULATA'); }
+  }
+  arOverlay.addEventListener('click', e => {
+    arReticle.style.left = e.clientX + 'px'; arReticle.style.top = e.clientY + 'px';
+    arTag.textContent = `LOCK X:${Math.round(e.clientX)} Y:${Math.round(e.clientY)}`; sfxTap();
+  });
+
+  setInterval(() => {
+    const now = new Date();
+    clockSub.textContent = `MARK VII // ${now.toLocaleTimeString('it-IT', { hour12: false })}.${String(now.getMilliseconds()).padStart(3, '0').slice(0, 2)}`;
+    netPill.textContent = navigator.onLine ? 'NET OK' : 'OFFLINE';
+    if (isAndroid) batPill.textContent = `PWR ${android.getBatteryLevel()}%`;
+  }, 150);
+
+  settingsBtn.addEventListener('click', () => {
+    sfxTap(); apiKeyInput.value = config.apiKey; modelSelect.value = config.model;
+    voiceToggle.checked = config.voiceEnabled; searchToggle.checked = config.searchEnabled;
+    if (isAndroid) { wakeToggle.checked = android.isWakeServiceRunning(); assistantBtn.classList.remove('hidden'); }
+    else document.getElementById('wakeRow').classList.add('hidden');
+    settingsModal.classList.remove('hidden');
+  });
+  closeSettingsBtn.addEventListener('click', () => settingsModal.classList.add('hidden'));
+  saveSettingsBtn.addEventListener('click', () => {
+    config.apiKey = apiKeyInput.value.trim(); config.model = modelSelect.value;
+    config.voiceEnabled = voiceToggle.checked; config.searchEnabled = searchToggle.checked;
+    localStorage.setItem('jarvis_api_key', config.apiKey); localStorage.setItem('jarvis_model', config.model);
+    localStorage.setItem('jarvis_voice', String(config.voiceEnabled)); localStorage.setItem('jarvis_search', String(config.searchEnabled));
+    if (isAndroid) android.setWakeServiceEnabled(wakeToggle.checked);
+    settingsModal.classList.add('hidden'); sfxBoot(); showToast('CONFIGURAZIONE SALVATA');
+  });
+  assistantBtn.addEventListener('click', () => { if (isAndroid) android.openAssistantSettings(); });
+  cmdForm.addEventListener('submit', e => { e.preventDefault(); const v = cmdInput.value; cmdInput.value = ''; handleCommand(v); });
+  micBtn.addEventListener('click', startListening); canvas.addEventListener('click', startListening);
+  stopSpeakBtn.addEventListener('click', stopSpeaking);
+  arBtn.addEventListener('click', () => { sfxTap(); toggleAR(); });
+  muteBtn.addEventListener('click', () => { sfxMuted = !sfxMuted; muteBtn.textContent = sfxMuted ? '🔇' : '🔊'; });
+  document.querySelectorAll('.mode-chip').forEach(b => b.addEventListener('click', () => handleCommand(b.dataset.cmd)));
+
+  let angle = 0;
+  function renderCore() {
+    const w = canvas.width, h = canvas.height, cx = w / 2, cy = h / 2;
+    const pal = PALETTES[currentMode] || PALETTES['STANDBY'];
+    if (isSpeaking) targetAudioLevel = 0.35 + Math.abs(Math.sin(angle * 4.2)) * 0.45;
+    else if (!isListening) targetAudioLevel = 0.08;
+    audioLevel += (targetAudioLevel - audioLevel) * 0.16;
+    angle += 0.015 * pal.speed;
+    ctx.clearRect(0, 0, w, h);
+    const grad = ctx.createRadialGradient(cx, cy, 20, cx, cy, 190);
+    grad.addColorStop(0, `rgba(${pal.rgb}, ${0.22 + audioLevel * 0.25})`);
+    grad.addColorStop(0.55, `rgba(${pal.rgb}, 0.06)`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(cx, cy, 190, 0, Math.PI * 2); ctx.fill();
+
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle * 0.7);
+    ctx.strokeStyle = `rgba(${pal.rgb}, 0.45)`; ctx.lineWidth = 2; ctx.setLineDash([14, 10, 4, 10]);
+    ctx.beginPath(); ctx.arc(0, 0, 168, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(-angle * 1.15);
+    ctx.strokeStyle = `rgba(${pal.rgb}, 0.85)`; ctx.lineWidth = 4;
+    for (let i = 0; i < 4; i++) { const s = i * (Math.PI / 2) + 0.18; ctx.beginPath(); ctx.arc(0, 0, 140, s, s + 0.95); ctx.stroke(); }
+    ctx.restore();
+
+    ctx.save(); ctx.translate(cx, cy);
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2 + angle * 0.4;
+      const len = 8 + (audioLevel * 36 * (0.4 + (Math.sin(i * 0.6 + angle * 5) * 0.5 + 0.5) * 0.8));
+      ctx.strokeStyle = i % 4 === 0 ? '#ffb300' : `rgba(${pal.rgb}, 0.85)`; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(Math.cos(a) * 100, Math.sin(a) * 100); ctx.lineTo(Math.cos(a) * (100 + len), Math.sin(a) * (100 + len)); ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle * 1.8);
+    ctx.strokeStyle = 'rgba(255, 179, 0, 0.78)'; ctx.lineWidth = 2.5; ctx.setLineDash([24, 14]);
+    ctx.beginPath(); ctx.arc(0, 0, 74, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+
+    const pulseR = 45 + audioLevel * 14;
+    const coreGrad = ctx.createRadialGradient(cx, cy, 4, cx, cy, pulseR);
+    coreGrad.addColorStop(0, '#ffffff'); coreGrad.addColorStop(0.35, pal.hex); coreGrad.addColorStop(1, `rgba(${pal.rgb}, 0.08)`);
+    ctx.fillStyle = coreGrad; ctx.beginPath(); ctx.arc(cx, cy, pulseR, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = '#030710'; ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(isListening ? 'REC' : 'ARC', cx, cy);
+    requestAnimationFrame(renderCore);
+  }
+  renderCore();
+  addLog('JARVIS', 'Sistemi online, signore. Tocchi il reattore centrale per impartire un comando vocale, oppure inserisca la sua Gemini API Key nelle impostazioni.');
+})();
+</script>
+</body>
+</html>

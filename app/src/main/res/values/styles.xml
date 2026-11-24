@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.Jarvis" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#030710</item>
+        <item name="android:statusBarColor">#030710</item>
+        <item name="android:navigationBarColor">#030710</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
